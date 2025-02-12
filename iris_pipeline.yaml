@@ -1,0 +1,201 @@
+# PIPELINE DEFINITION
+# Name: iris-pipeline
+components:
+  comp-evaluate:
+    executorLabel: exec-evaluate
+    inputDefinitions:
+      parameters:
+        input_path:
+          parameterType: STRING
+        metrics_path:
+          parameterType: STRING
+        model_path:
+          parameterType: STRING
+  comp-preprocess:
+    executorLabel: exec-preprocess
+    inputDefinitions:
+      parameters:
+        output_path:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-train:
+    executorLabel: exec-train
+    inputDefinitions:
+      parameters:
+        input_path:
+          parameterType: STRING
+        model_path:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-evaluate:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate(input_path: str, model_path: str, metrics_path: str):\n\
+          \    import numpy as np\n    import joblib\n    from sklearn.metrics import\
+          \ accuracy_score\n    import os\n\n    X_test = np.load(f\"{input_path}/X_test.npy\"\
+          )\n    y_test = np.load(f\"{input_path}/y_test.npy\")\n\n    model = joblib.load(f\"\
+          {model_path}/model.pkl\")\n    predictions = model.predict(X_test)\n\n \
+          \   accuracy = accuracy_score(y_test, predictions)\n\n    os.makedirs(metrics_path,\
+          \ exist_ok=True)\n    with open(f\"{metrics_path}/metrics.txt\", \"w\")\
+          \ as f:\n        f.write(f\"Accuracy: {accuracy}\\n\")\n\n"
+        image: python:3.9
+    exec-preprocess:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess(output_path: str) -> str:  # Output type as string\
+          \ (output path)\n    import numpy as np\n    from sklearn import datasets\n\
+          \    import os\n\n    iris = datasets.load_iris()\n    X = iris.data\n \
+          \   y = iris.target\n\n    os.makedirs(output_path, exist_ok=True)\n   \
+          \ np.save(f\"{output_path}/X_train.npy\", X)\n    np.save(f\"{output_path}/y_train.npy\"\
+          , y)\n\n    return output_path  # Return output path as string\n\n"
+        image: python:3.9
+    exec-train:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train(input_path: str, model_path: str) -> str:\n    from sklearn\
+          \ import datasets\n    from sklearn.model_selection import train_test_split\n\
+          \    from sklearn.ensemble import RandomForestClassifier\n    import joblib\n\
+          \    import os\n\n    # Load the data\n    X = np.load(f\"{input_path}/X_train.npy\"\
+          )\n    y = np.load(f\"{input_path}/y_train.npy\")\n\n    # Train a model\n\
+          \    model = RandomForestClassifier()\n    model.fit(X, y)\n\n    # Save\
+          \ the model\n    os.makedirs(model_path, exist_ok=True)\n    model_file\
+          \ = os.path.join(model_path, \"model.joblib\")\n    joblib.dump(model, model_file)\n\
+          \n    return model_file  # Returning the path to the model as output\n\n"
+        image: python:3.9
+pipelineInfo:
+  name: iris-pipeline
+root:
+  dag:
+    tasks:
+      evaluate:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate
+        dependentTasks:
+        - preprocess
+        - train
+        inputs:
+          parameters:
+            input_path:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: preprocess
+            metrics_path:
+              runtimeValue:
+                constant: /mnt/data
+            model_path:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: train
+        taskInfo:
+          name: evaluate
+      preprocess:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess
+        inputs:
+          parameters:
+            output_path:
+              runtimeValue:
+                constant: /mnt/data
+        taskInfo:
+          name: preprocess
+      train:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train
+        dependentTasks:
+        - preprocess
+        inputs:
+          parameters:
+            input_path:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: preprocess
+            model_path:
+              runtimeValue:
+                constant: /mnt/data
+        taskInfo:
+          name: train
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.11.0
