@@ -1,0 +1,319 @@
+# PIPELINE DEFINITION
+# Name: iris-classification-pipeline
+# Description: Orchestrate the end-to-end classification pipeline.
+components:
+  comp-acquire-dataset:
+    executorLabel: exec-acquire-dataset
+    outputDefinitions:
+      artifacts:
+        dataset_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-assess-performance:
+    executorLabel: exec-assess-performance
+    inputDefinitions:
+      artifacts:
+        testing_features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        testing_labels:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        performance_metrics:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-develop-model:
+    executorLabel: exec-develop-model
+    inputDefinitions:
+      artifacts:
+        training_features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        training_labels:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-prepare-features:
+    executorLabel: exec-prepare-features
+    inputDefinitions:
+      artifacts:
+        raw_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        testing_features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        testing_labels:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        training_features:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        training_labels:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-acquire-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - acquire_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef acquire_dataset(dataset_output: Output[Dataset]):\n    \"\"\"\
+          Acquire and prepare the initial dataset.\"\"\"\n    import subprocess\n\
+          \    subprocess.run([\"pip\", \"install\", \"pandas\", \"scikit-learn\"\
+          ], check=True)\n\n    from sklearn.datasets import load_iris\n    import\
+          \ pandas as pd\n\n    raw_data = load_iris()\n    dataset = pd.DataFrame(\n\
+          \        raw_data.data,\n        columns=[name.replace(' ', '_').lower()\
+          \ for name in raw_data.feature_names]\n    )\n    dataset['species_class']\
+          \ = raw_data.target\n\n    dataset.to_csv(dataset_output.path, index=False)\n\
+          \n"
+        image: python:3.9
+    exec-assess-performance:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - assess_performance
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef assess_performance(\n    testing_features: Input[Dataset],\n\
+          \    testing_labels: Input[Dataset],\n    trained_model: Input[Model],\n\
+          \    performance_metrics: Output[Dataset]\n):\n    \"\"\"Evaluate model\
+          \ performance and generate visualization.\"\"\"\n    import subprocess\n\
+          \    subprocess.run([\"pip\", \"install\", \"pandas\", \"scikit-learn\"\
+          , \"seaborn\", \"joblib\"], check=True)\n\n    import pandas as pd\n   \
+          \ import seaborn as sns\n    import matplotlib.pyplot as plt\n    from sklearn.metrics\
+          \ import classification_report, confusion_matrix\n    from joblib import\
+          \ load\n\n    X_test = pd.read_csv(testing_features.path)\n    y_true =\
+          \ pd.read_csv(testing_labels.path)['species_class']\n    classifier = load(trained_model.path)\n\
+          \n    y_pred = classifier.predict(X_test)\n\n    metrics = classification_report(y_true,\
+          \ y_pred, output_dict=True)\n    conf_matrix = confusion_matrix(y_true,\
+          \ y_pred)\n\n    plt.figure(figsize=(10, 8))\n    sns.heatmap(conf_matrix,\
+          \ annot=True, fmt='d', cmap='YlOrRd')\n    plt.title('Confusion Matrix Heatmap')\n\
+          \    plt.xlabel('Predicted Class')\n    plt.ylabel('Actual Class')\n\n \
+          \   results = {\n        'metrics': metrics,\n        'confusion_matrix':\
+          \ conf_matrix.tolist()\n    }\n    pd.DataFrame([results]).to_json(performance_metrics.path)\n\
+          \n"
+        image: python:3.9
+    exec-develop-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - develop_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef develop_model(\n    training_features: Input[Dataset],\n    training_labels:\
+          \ Input[Dataset],\n    model_artifact: Output[Model]\n):\n    \"\"\"Build\
+          \ and train the classification model.\"\"\"\n    import subprocess\n   \
+          \ subprocess.run([\"pip\", \"install\", \"pandas\", \"scikit-learn\", \"\
+          joblib\"], check=True)\n\n    import pandas as pd\n    from sklearn.linear_model\
+          \ import LogisticRegression\n    from joblib import dump\n\n    X = pd.read_csv(training_features.path)\n\
+          \    y = pd.read_csv(training_labels.path)['species_class']\n\n    classifier\
+          \ = LogisticRegression(\n        class_weight='balanced',\n        max_iter=1000,\n\
+          \        random_state=42,\n        multi_class='multinomial'\n    )\n  \
+          \  classifier.fit(X, y)\n\n    dump(classifier, model_artifact.path)\n\n"
+        image: python:3.9
+    exec-prepare-features:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prepare_features
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prepare_features(\n    raw_dataset: Input[Dataset],\n    training_features:\
+          \ Output[Dataset],\n    testing_features: Output[Dataset],\n    training_labels:\
+          \ Output[Dataset],\n    testing_labels: Output[Dataset]\n):\n    \"\"\"\
+          Transform and split the dataset for modeling.\"\"\"\n    import subprocess\n\
+          \    subprocess.run([\"pip\", \"install\", \"pandas\", \"scikit-learn\"\
+          ], check=True)\n\n    import pandas as pd\n    import numpy as np\n    from\
+          \ sklearn.preprocessing import RobustScaler\n    from sklearn.model_selection\
+          \ import train_test_split\n\n    dataset = pd.read_csv(raw_dataset.path)\n\
+          \    assert dataset.notna().all().all(), \"Dataset contains missing values\"\
+          \n\n    features = dataset.drop(columns=['species_class'])\n    target =\
+          \ dataset['species_class']\n\n    feature_transformer = RobustScaler()\n\
+          \    normalized_features = feature_transformer.fit_transform(features)\n\
+          \n    X_train, X_test, y_train, y_test = train_test_split(\n        normalized_features,\
+          \ \n        target,\n        test_size=0.25,\n        random_state=42,\n\
+          \        stratify=target\n    )\n\n    train_df = pd.DataFrame(X_train,\
+          \ columns=features.columns)\n    test_df = pd.DataFrame(X_test, columns=features.columns)\n\
+          \    train_labels_df = pd.DataFrame(y_train, columns=['species_class'])\n\
+          \    test_labels_df = pd.DataFrame(y_test, columns=['species_class'])\n\n\
+          \    train_df.to_csv(training_features.path, index=False)\n    test_df.to_csv(testing_features.path,\
+          \ index=False)\n    train_labels_df.to_csv(training_labels.path, index=False)\n\
+          \    test_labels_df.to_csv(testing_labels.path, index=False)\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: Orchestrate the end-to-end classification pipeline.
+  name: iris-classification-pipeline
+root:
+  dag:
+    tasks:
+      acquire-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-acquire-dataset
+        taskInfo:
+          name: acquire-dataset
+      assess-performance:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-assess-performance
+        dependentTasks:
+        - develop-model
+        - prepare-features
+        inputs:
+          artifacts:
+            testing_features:
+              taskOutputArtifact:
+                outputArtifactKey: testing_features
+                producerTask: prepare-features
+            testing_labels:
+              taskOutputArtifact:
+                outputArtifactKey: testing_labels
+                producerTask: prepare-features
+            trained_model:
+              taskOutputArtifact:
+                outputArtifactKey: model_artifact
+                producerTask: develop-model
+        taskInfo:
+          name: assess-performance
+      develop-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-develop-model
+        dependentTasks:
+        - prepare-features
+        inputs:
+          artifacts:
+            training_features:
+              taskOutputArtifact:
+                outputArtifactKey: training_features
+                producerTask: prepare-features
+            training_labels:
+              taskOutputArtifact:
+                outputArtifactKey: training_labels
+                producerTask: prepare-features
+        taskInfo:
+          name: develop-model
+      prepare-features:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-features
+        dependentTasks:
+        - acquire-dataset
+        inputs:
+          artifacts:
+            raw_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: dataset_output
+                producerTask: acquire-dataset
+        taskInfo:
+          name: prepare-features
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.11.0
