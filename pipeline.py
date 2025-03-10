@@ -1,34 +1,33 @@
-# pipeline.py
 from kfp import dsl, compiler
-from components.data_acquisition import acquire_dataset
-from components.feature_preparation import prepare_features
-from components.model_development import develop_model
-from components.performance_assessment import assess_performance
+from components.data_loader import fetch_data
+from components.feature_engineering import process_features
+from components.model_training import train_model
+from components.evaluation import evaluate_model
 
-@dsl.pipeline(name="iris-classification-pipeline")
-def classification_pipeline():
-    """Orchestrate the end-to-end classification pipeline."""
-    # Data acquisition
-    data_op = acquire_dataset()
+@dsl.pipeline(name="iris-classifier-pipeline")
+def iris_pipeline():
+    """Defines the complete pipeline for classification."""
+    # Load dataset
+    data_task = fetch_data()
     
-    # Feature preparation
-    prep_op = prepare_features(raw_dataset=data_op.outputs["dataset_output"])
+    # Process features
+    feature_task = process_features(raw_data=data_task.outputs["data_output"])
     
-    # Model development
-    model_op = develop_model(
-        training_features=prep_op.outputs["training_features"],
-        training_labels=prep_op.outputs["training_labels"]
+    # Train the model
+    model_task = train_model(
+        train_features=feature_task.outputs["train_features"],
+        train_labels=feature_task.outputs["train_labels"]
     )
     
-    # Performance assessment - Fixed the output reference
-    assess_op = assess_performance(
-        testing_features=prep_op.outputs["testing_features"],
-        testing_labels=prep_op.outputs["testing_labels"],  # This was the issue
-        trained_model=model_op.outputs["model_artifact"]
+    # Evaluate performance
+    eval_task = evaluate_model(
+        test_features=feature_task.outputs["test_features"],
+        test_labels=feature_task.outputs["test_labels"],
+        model_file=model_task.outputs["model_output"]
     )
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        pipeline_func=classification_pipeline,
-        package_path="iris_pipeline.yaml"
+        pipeline_func=iris_pipeline,
+        package_path="iris_classifier_pipeline.yaml"
     )

@@ -2,13 +2,13 @@ from kfp import dsl
 from kfp.dsl import Input, Output, Dataset, Model, component
 
 @dsl.component(base_image="python:3.9")
-def assess_performance(
-    testing_features: Input[Dataset],
-    testing_labels: Input[Dataset],
-    trained_model: Input[Model],
-    performance_metrics: Output[Dataset]
+def evaluate_model(
+    test_features: Input[Dataset],
+    test_labels: Input[Dataset],
+    model_file: Input[Model],
+    evaluation_output: Output[Dataset]
 ):
-    """Evaluate model performance and generate visualization."""
+    """Evaluates model performance and generates a report."""
     import subprocess
     subprocess.run(["pip", "install", "pandas", "scikit-learn", "seaborn", "joblib"], check=True)
     
@@ -18,11 +18,11 @@ def assess_performance(
     from sklearn.metrics import classification_report, confusion_matrix
     from joblib import load
     
-    X_test = pd.read_csv(testing_features.path)
-    y_true = pd.read_csv(testing_labels.path)['species_class']
-    classifier = load(trained_model.path)
+    X_test = pd.read_csv(test_features.path)
+    y_true = pd.read_csv(test_labels.path)['label']
+    model = load(model_file.path)
     
-    y_pred = classifier.predict(X_test)
+    y_pred = model.predict(X_test)
     
     metrics = classification_report(y_true, y_pred, output_dict=True)
     conf_matrix = confusion_matrix(y_true, y_pred)
@@ -37,4 +37,4 @@ def assess_performance(
         'metrics': metrics,
         'confusion_matrix': conf_matrix.tolist()
     }
-    pd.DataFrame([results]).to_json(performance_metrics.path)
+    pd.DataFrame([results]).to_json(evaluation_output.path)
